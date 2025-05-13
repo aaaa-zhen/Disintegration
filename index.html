@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebGL Disintegration Effect</title>
+<style>
+body {
+  margin: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #121212;
+  color: #eee;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  text-align: center;
+  flex-direction: column;
+  padding: 20px;
+}
+
+h1 {
+  margin-bottom: 10px;
+  color: #f0f0f0;
+  font-weight: 300;
+  font-size: 2.5rem;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.subtitle {
+  font-size: 1rem;
+  color: #aaa;
+  margin-bottom: 30px;
+}
+
+.canvas-container {
+  background-color: #1e1e1e;
+  padding: 20px;
+  display: inline-block;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  position: relative;
+  transition: all 0.3s ease;
+  border: 1px solid #333;
+}
+
+canvas {
+  border: 1px solid #333;
+  cursor: default;
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#controls {
+  margin-top: 25px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.buttons-row {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.file-input-wrapper {
+  position: relative;
+  overflow: hidden;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.file-input-wrapper input[type=file] {
+  position: absolute;
+  font-size: 100px;
+  right: 0;
+  top: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.button {
+  padding: 10px 20px;
+  background-color: #2d2d2d;
+  color: #f0f0f0;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 140px;
+}
+
+.button:hover {
+  background-color: #3d3d3d;
+  transform: translateY(-2px);
+}
+
+.button:active {
+  transform: translateY(0);
+}
+
+.button-primary {
+  background-color: #502379;
+}
+
+.button-primary:hover {
+  background-color: #6930a0;
+}
+
+.button-reset {
+  background-color: #444;
+}
+
+.info-panel {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #bbb;
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.info-label {
+  font-size: 0.8rem;
+  color: #888;
+  margin-bottom: 5px;
+}
+
+.info-value {
+  font-family: monospace;
+  font-size: 1.1rem;
+  color: #f0f0f0;
+}
+
+.loading-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.7);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 4px;
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .canvas-container {
+    padding: 10px;
+  }
+  
+  .button {
+    padding: 8px 16px;
+    min-width: 120px;
+  }
+  
+  .info-panel {
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+</style>
+</head>
+<body>
+<h1>Particle Disintegration</h1>
+<p class="subtitle">Upload an image and watch it dissolve into particles</p>
+
+<div class="buttons-row">
+  <div class="file-input-wrapper">
+    <!-- <button class="button">Choose Image</button> -->
+    <input type="file" id="imageUpload" accept="image/*">
+  </div>
+  <button id="startMeltdownButton" class="button button-primary">Start Effect</button>
+  <button id="resetButton" class="button button-reset">Reset</button>
+</div>
+
+<div class="info-panel">
+  <div class="info-item">
+    <div class="info-label">Current Time</div>
+    <div id="currentTimeDisplay" class="info-value">0.00s</div>
+  </div>
+  <div class="info-item">
+    <div class="info-label">Effect Started</div>
+    <div id="meltdownStartDisplay" class="info-value">-</div>
+  </div>
+  <div class="info-item">
+    <div class="info-label">Image Status</div>
+    <div id="imageStatusDisplay" class="info-value">Loading...</div>
+  </div>
+</div>
+
+<div class="canvas-container">
+  <canvas id="disintegrationCanvas"></canvas>
+  <div id="loadingIndicator" class="loading-indicator">Loading image...</div>
+</div>
+
+<script>
+const canvas = document.getElementById('disintegrationCanvas');
+const gl = canvas.getContext('webgl', { premultipliedAlpha: true, alpha: true });
+const imageUpload = document.getElementById('imageUpload');
+const startMeltdownButton = document.getElementById('startMeltdownButton');
+const resetButton = document.getElementById('resetButton');
+const currentTimeDisplay = document.getElementById('currentTimeDisplay');
+const meltdownStartDisplay = document.getElementById('meltdownStartDisplay');
+const imageStatusDisplay = document.getElementById('imageStatusDisplay');
+const loadingIndicator = document.getElementById('loadingIndicator');
+
+if (!gl) {
+    alert('WebGL not supported or disabled in your browser!');
+    throw new Error('WebGL not supported');
+}
+
+// --- Shader Source ---
+const FRAGMENT_SHADER_SOURCE = `
+    precision mediump float;
+    uniform sampler2D u_image;
+    uniform vec2 u_resolution;
+    uniform float u_time;
+    uniform float u_meltdownStart; // Time when meltdown begins
+    
+    // Based on the provided shader's Hash21
+    float Hash21(vec2 p) {
+        return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453123);
+    }
+    
+    // Based on the provided shader's Noise
+    float Noise(vec2 p) {
+        float unit = 0.05; // Original unit
+        vec2 ij = floor(p/unit);
+        vec2 xy = mod(p,unit)/unit;
+        xy = 0.5 * (1.0 - cos(3.1415926535 * xy)); // Smoothstep
+        float a = Hash21(ij + vec2(0.0, 0.0));
+        float b = Hash21(ij + vec2(1.0, 0.0));
+        float c = Hash21(ij + vec2(0.0, 1.0));
+        float d = Hash21(ij + vec2(1.0, 1.0));
+        float x1 = mix(a, b, xy.x);
+        float x2 = mix(c, d, xy.x);
+        return mix(x1, x2, xy.y);
+    }
+    
+    void main() {
+        // Adjust gl_FragCoord (bottom-left origin) to shader's expected top-left origin for fragCoord
+        vec2 fragCoord = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
+        float CELL_SIZE = 3.0; // Particle unit size
+        vec2 cellCoord = floor(fragCoord / CELL_SIZE);
+        float timeScale = 1.0;
+        float totalT = 0.0;
+        
+        if (u_meltdownStart >= 0.0) { // Only process time if meltdown has started
+            totalT = (u_time - u_meltdownStart) * timeScale;
+        }
+        
+        totalT = max(0.0, totalT); // Ensure time is not negative
+        vec2 normalizedPos = fragCoord / u_resolution; // For distance from top-left
+        float distFromTopLeft = length(normalizedPos - vec2(0.0, 0.0)); // Assumes top-left is 0,0
+        float distDelay = distFromTopLeft * 0.8;
+        float moveStartRand = Hash21(cellCoord + vec2(37.77, 91.91));
+        float blockStartTime = moveStartRand * 0.15;
+        float localT = totalT - distDelay - blockStartTime;
+        float fadeStartRand = Hash21(cellCoord + vec2(55.89, 23.45));
+        float fadeDelay = 0.03 + fadeStartRand * 0.05;
+        float fadeLocalT = localT - fadeDelay;
+        float meltdownRand = Hash21(cellCoord + vec2(73.31, 19.53));
+        float meltdownTime = 0.1 + meltdownRand * 0.2;
+        float meltdownProgress = clamp(localT, 0.0, meltdownTime) / meltdownTime;
+        float meltdownMask = step(0.0, localT); // Only apply if localT is positive
+        float dirRand = Hash21(cellCoord + vec2(26.54, 89.67));
+        float angle = 3.14159 * 0.25 + dirRand * 3.14159 * 0.5; // 45 to 135 degrees
+        vec2 dir = vec2(cos(angle), sin(angle)); // Towards bottom-right quadrant
+        float speedBase = 120.0;
+        float speedRange = 150.0;
+        float speedRand = Hash21(cellCoord + vec2(85.311, 12.34));
+        float speed = speedBase + speedRange * speedRand;
+        float meltdownFactor = meltdownProgress * meltdownProgress; // Quadratic acceleration
+        vec2 offset = dir * speed * meltdownFactor * meltdownMask;
+        float scaleRand = Hash21(cellCoord + vec2(29.76, 53.42));
+        float maxScale = 1.1;
+        float scaleProgress = clamp(localT * (1.0 + scaleRand * 0.5), 0.0, 1.0);
+        float scale = mix(1.0, maxScale, scaleProgress * meltdownMask);
+        vec2 cellCenter = (cellCoord + 0.5) * CELL_SIZE;
+        vec2 scaledCoord = cellCenter + (fragCoord - cellCenter) / scale; // Scale from cell center
+        vec2 sampleCoord = scaledCoord - offset;
+        
+        // Convert pixel coordinates to normalized texture coordinates for texture2D
+        vec2 uv = sampleCoord / u_resolution;
+        
+        // Clamp UV coordinates to prevent sampling outside the texture
+        uv = clamp(uv, vec2(0.0), vec2(1.0));
+        
+        vec4 displacedColor = texture2D(u_image, uv);
+        float fadeRand = Hash21(cellCoord + vec2(42.89, 63.71));
+        float fadeSpeed = 4.0 + fadeRand * 14.0;
+        float fadeProgress = clamp(fadeLocalT * fadeSpeed, 0.0, 1.0);
+        float fadeMask = step(0.0, fadeLocalT);
+        
+        // Noise input: cellCoord is in "cell units", scale it for Noise function
+        float noiseValue = Noise(cellCoord * 0.1 + u_time * 0.5); // Added u_time for dynamic noise
+        float fadePattern = Hash21(cellCoord + vec2(91.23, 45.67));
+        float irregularFade = mix(
+            pow(1.0 - fadeProgress, 2.0), // Faster fade
+            pow(1.0 - fadeProgress, 1.0), // Slower fade
+            fadePattern
+        );
+        
+        float finalAlpha = mix(
+            1.0, // Original alpha before fading
+            irregularFade * (0.85 + 0.15 * noiseValue),
+            fadeMask * meltdownMask // Apply fade only when active
+        );
+        
+        // Apply final alpha (original shader premultiplied RGB by alpha)
+        displacedColor.a *= finalAlpha;
+        displacedColor.rgb *= finalAlpha; // Premultiply alpha for blending
+        
+        gl_FragColor = displacedColor;
+    }
+`;
+
+const VERTEX_SHADER_SOURCE = `
+    attribute vec2 a_position;
+    attribute vec2 a_texCoord;
+    varying vec2 v_texCoord;
+    
+    void main() {
+        gl_Position = vec4(a_position, 0.0, 1.0);
+        v_texCoord = a_texCoord;
+    }
+`;
+
+let glProgram;
+let positionBuffer, texCoordBuffer;
+let imageTexture;
+let uImageLoc, uResolutionLoc, uTimeLoc, uMeltdownStartLoc;
+let sourceImage = new Image();
+let imageLoaded = false;
+let meltdownStartTime = -1.0; // -1 means not started
+let animationFrameId;
+let globalTime = 0;
+const startTime = Date.now();
+
+// Default images (multiple options for variety)
+const defaultImages = [
+    'https://picsum.photos/seed/disintegration1/600/400',
+    'https://picsum.photos/seed/disintegration2/600/400',
+    'https://picsum.photos/seed/disintegration3/600/400'
+];
+
+function compileShader(source, type) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+    }
+    return shader;
+}
+
+function createProgram(vsSource, fsSource) {
+    const vertexShader = compileShader(vsSource, gl.VERTEX_SHADER);
+    const fragmentShader = compileShader(fsSource, gl.FRAGMENT_SHADER);
+    
+    if (!vertexShader || !fragmentShader) return null;
+    
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error('Program linking error:', gl.getProgramInfoLog(program));
+        gl.deleteProgram(program);
+        return null;
+    }
+    return program;
+}
+
+function setupBuffers() {
+    // Create a quad (2 triangles) to cover the canvas
+    const positions = new Float32Array([
+        -1, -1, // bottom left
+        1, -1, // bottom right
+        -1, 1, // top left
+        -1, 1, // top left
+        1, -1, // bottom right
+        1, 1, // top right
+    ]);
+    positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+    // Texture coordinates for the quad
+    const texCoords = new Float32Array([
+        0, 1, // bottom left
+        1, 1, // bottom right
+        0, 0, // top left
+        0, 0, // top left
+        1, 1, // bottom right
+        1, 0, // top right
+    ]);
+    texCoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+}
+
+function setupTexture(image) {
+    try {
+        // Clean up previous texture if it exists
+        if (imageTexture) {
+            gl.deleteTexture(imageTexture);
+        }
+
+        imageTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, imageTexture);
+        
+        // Set texture parameters
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        
+        // Upload image to texture
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+        
+        // Check for errors
+        const error = gl.getError();
+        if (error !== gl.NO_ERROR) {
+            console.error('WebGL texture error:', error);
+            imageStatusDisplay.textContent = "Error: Texture creation failed";
+            return false;
+        }
+        
+        gl.bindTexture(gl.TEXTURE_2D, null); // Unbind
+        console.log("Texture setup successful");
+        return true;
+    } catch (e) {
+        console.error('Error setting up texture:', e);
+        imageStatusDisplay.textContent = "Error: " + e.message;
+        return false;
+    }
+}
+
+function loadImage(src) {
+    console.log('Loading image from source');
+    imageLoaded = false;
+    meltdownStartTime = -1.0; // Reset meltdown on new image load attempt
+    
+    // Update status displays
+    imageStatusDisplay.textContent = "Loading...";
+    meltdownStartDisplay.textContent = "-";
+    loadingIndicator.style.display = "block";
+    
+    if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId); // Stop animation while loading
+    }
+    
+    // Only set crossOrigin for remote URLs
+    if (src.startsWith('http') || src.startsWith('https')) {
+        sourceImage.crossOrigin = "Anonymous";
+    } else {
+        sourceImage.crossOrigin = null;
+    }
+    
+    sourceImage.onload = () => {
+        console.log('Image loaded successfully, dimensions:', sourceImage.width, 'x', sourceImage.height);
+        
+        // Validate image dimensions
+        if (sourceImage.width === 0 || sourceImage.height === 0) {
+            console.error('Invalid image dimensions:', sourceImage.width, 'x', sourceImage.height);
+            imageStatusDisplay.textContent = "Error: Invalid image dimensions";
+            loadingIndicator.style.display = "none";
+            return;
+        }
+        
+        // Optional: Limit canvas size for performance
+        const MAX_DIMENSION = 800;
+        let newWidth = sourceImage.width;
+        let newHeight = sourceImage.height;
+        
+        if (newWidth > MAX_DIMENSION || newHeight > MAX_DIMENSION) {
+            const aspectRatio = newWidth / newHeight;
+            if (aspectRatio > 1) { // Landscape
+                newWidth = MAX_DIMENSION;
+                newHeight = MAX_DIMENSION / aspectRatio;
+            } else { // Portrait or square
+                newHeight = MAX_DIMENSION;
+                newWidth = MAX_DIMENSION * aspectRatio;
+            }
+        }
+        
+        canvas.width = Math.round(newWidth);
+        canvas.height = Math.round(newHeight);
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        
+        // Setup texture with error handling
+        if (setupTexture(sourceImage)) {
+            imageLoaded = true;
+            imageStatusDisplay.textContent = "Ready";
+        } else {
+            imageStatusDisplay.textContent = "Error: Failed to create texture";
+        }
+        
+        loadingIndicator.style.display = "none";
+        
+        if (glProgram && uResolutionLoc) {
+            gl.useProgram(glProgram); // Important to use program before setting uniforms
+            gl.uniform2f(uResolutionLoc, canvas.width, canvas.height);
+        }
+        
+        if (!animationFrameId) {
+            drawScene(); // Start animation
+        }
+    };
+    
+    sourceImage.onerror = (error) => {
+        console.error("Failed to load image:", error);
+        imageStatusDisplay.textContent = "Error: Failed to load image";
+        loadingIndicator.style.display = "none";
+        
+        // Clear canvas or show error message
+        gl.clearColor(0.2, 0.0, 0.0, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        
+        // Fallback if default fails
+        if (defaultImages.includes(src)) {
+            // Try a simple blank image as last resort
+            loadImage("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=");
+        }
+    };
+    
+    sourceImage.src = src;
+}
+
+function init() {
+    glProgram = createProgram(VERTEX_SHADER_SOURCE, FRAGMENT_SHADER_SOURCE);
+    if (!glProgram) {
+        console.error('Failed to create WebGL program');
+        imageStatusDisplay.textContent = "Error: WebGL initialization failed";
+        return;
+    }
+    
+    // Get attribute locations
+    const positionAttribLoc = gl.getAttribLocation(glProgram, 'a_position');
+    const texCoordAttribLoc = gl.getAttribLocation(glProgram, 'a_texCoord');
+    
+    // Get uniform locations
+    uImageLoc = gl.getUniformLocation(glProgram, 'u_image');
+    uResolutionLoc = gl.getUniformLocation(glProgram, 'u_resolution');
+    uTimeLoc = gl.getUniformLocation(glProgram, 'u_time');
+    uMeltdownStartLoc = gl.getUniformLocation(glProgram, 'u_meltdownStart');
+    
+    setupBuffers();
+    
+    // Enable vertex attributes
+    gl.enableVertexAttribArray(positionAttribLoc);
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.vertexAttribPointer(positionAttribLoc, 2, gl.FLOAT, false, 0, 0);
+    
+    gl.enableVertexAttribArray(texCoordAttribLoc);
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+    gl.vertexAttribPointer(texCoordAttribLoc, 2, gl.FLOAT, false, 0, 0);
+    
+    // Setup blending for transparency
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    
+    // Initial load - randomly select one of the default images
+    const randomIndex = Math.floor(Math.random() * defaultImages.length);
+    loadImage(defaultImages[randomIndex]);
+    
+    // Event Listeners
+    imageUpload.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            console.log('Selected file:', file.name, file.type);
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                console.log('File loaded successfully as data URL');
+                loadImage(e.target.result);
+            };
+            
+            reader.onerror = (error) => {
+                console.error('Error reading file:', error);
+                imageStatusDisplay.textContent = "Error: Failed to read file";
+            };
+            
+            reader.readAsDataURL(file);
+        }
+    });
+    
+    startMeltdownButton.addEventListener('click', () => {
+        if (imageLoaded) {
+            meltdownStartTime = (Date.now() - startTime) / 1000.0; // Set current time as start
+            meltdownStartDisplay.textContent = meltdownStartTime.toFixed(2) + "s";
+            imageStatusDisplay.textContent = "Effect active";
+        } else {
+            alert("Please wait for image to load first.");
+        }
+    });
+    
+    resetButton.addEventListener('click', () => {
+        if (imageLoaded) {
+            meltdownStartTime = -1.0; // Reset effect
+            meltdownStartDisplay.textContent = "-";
+            imageStatusDisplay.textContent = "Reset";
+        }
+    });
+}
+
+function drawScene() {
+    globalTime = (Date.now() - startTime) / 1000.0;
+    currentTimeDisplay.textContent = globalTime.toFixed(2) + "s";
+    
+    if (!imageLoaded || !glProgram) {
+        animationFrameId = requestAnimationFrame(drawScene);
+        return;
+    }
+    
+    gl.clearColor(0.0, 0.0, 0.0, 0.0); // Transparent background
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    
+    gl.useProgram(glProgram);
+    
+    // Set uniforms
+    gl.uniform1f(uTimeLoc, globalTime);
+    gl.uniform2f(uResolutionLoc, canvas.width, canvas.height); // Ensure it's set each frame
+    gl.uniform1f(uMeltdownStartLoc, meltdownStartTime);
+    
+    // Activate texture unit 0 and bind the image texture
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, imageTexture);
+    gl.uniform1i(uImageLoc, 0); // Tell shader to use texture unit 0
+    
+    // Draw the quad
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    
+    animationFrameId = requestAnimationFrame(drawScene);
+}
+
+// --- Start ---
+try {
+    init();
+    drawScene(); // Initial call to start the animation loop
+} catch (e) {
+    console.error('Fatal error during initialization:', e);
+    imageStatusDisplay.textContent = "Fatal error: " + e.message;
+}
+</script>
+</body>
+</html>
